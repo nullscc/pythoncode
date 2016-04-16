@@ -20,7 +20,7 @@ UserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gec
 RootURL = 'http://www.qiushibaike.com/hot/'
 
 #糗百的文字段子正则表达式，如果网站改版，需要更新正则表达式
-QBRegex = r'<div class="content">(.*?)<!--.*?-->.*?</div>\s*(?!.*?<div class="thumb">.*?)<div class="stats">'
+QBRegex = r'<div class="content">(.*?)<!--.*?-->.*?</div>\s*(?!.*?<div class="thumb">.*?)?<div class="stats">'
 
 class qsbk:
 	def __init__(self):
@@ -34,7 +34,7 @@ class qsbk:
 			content = f.read().decode('utf-8')
 			pattern = re.compile(QBRegex, re.S)
 			items = pattern.findall(content)
-			for i in range(5):
+			for i in range(5):	#后续需要考虑下正则表达式没匹配到的情况，会导致IndexError
 				self.email_content += items[i].replace('<br/>', '')
 			return self.email_content
 
