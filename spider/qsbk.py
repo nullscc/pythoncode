@@ -19,6 +19,9 @@ SRVPORT = 465
 UserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.112 Safari/537.36'
 RootURL = 'http://www.qiushibaike.com/hot/'
 
+#糗百的文字段子正则表达式，如果网站改版，需要更新正则表达式
+QBRegex = r'<div class="content">(.*?)<!--.*?-->.*?</div>\s*(?!.*?<div class="thumb">.*?)<div class="stats">'
+
 class qsbk:
 	def __init__(self):
 		self.url = RootURL
@@ -29,7 +32,7 @@ class qsbk:
 		req.add_header('User-Agent', UserAgent)
 		with request.urlopen(req) as f:
 			content = f.read().decode('utf-8')
-			pattern = re.compile(r'<div class="content">(.*?)<!--.*?-->.*?</div>\s*(?!<div class="thumb">)<div class="stats">',re.S)
+			pattern = re.compile(QBRegex, re.S)
 			items = pattern.findall(content)
 			for i in range(5):
 				self.email_content += items[i].replace('<br/>', '')
@@ -50,7 +53,6 @@ class qsbk:
 		server.login(SENDEREMAIL, SENDPASSWORD)
 		server.sendmail(SENDEREMAIL, TOADDR, msg.as_string())
 		server.quit()
-
 
 qs = qsbk()
 
