@@ -8,16 +8,21 @@ from email.mime.text import MIMEText
 import smtplib
 from email.utils import parseaddr, formataddr
 from email.header import Header
+import mysql.connector
 
 SENDEREMAIL = 'yourmail@qq.com'
 SENDPASSWORD = 'youpasswd'		#QQ或163需要使用客户端密码，对于QQ来说是独立密码
-TOADDR = ['tomail@qq.com']
+
 
 SRVADDR = 'smtp.qq.com'
 SRVPORT = 465
 
 UserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.112 Safari/537.36'
 RootURL = 'http://www.qiushibaike.com/hot/'
+
+SQLUser = 'root'
+SQLPasswd = 'passwd'
+SQLDataBase = 'python'
 
 #糗百的文字段子正则表达式，如果网站改版，需要更新正则表达式
 QBRegex = r'<div class="content">(.*?)<!--.*?-->.*?</div>\s*(?!.*?<div class="thumb">.*?)?<div class="stats">'
@@ -26,6 +31,7 @@ class qsbk:
 	def __init__(self):
 		self.url = RootURL
 		self.email_content = ''
+		self.emails = [SENDEREMAIL]
 
 	def get_content(self):
 		req = request.Request(self.url)
@@ -42,7 +48,20 @@ class qsbk:
 		name, addr = parseaddr(s)
 		return formataddr((Header(name, 'utf-8').encode(), addr))
 
+	def get_emailaddr(self):	#连接SQL服务器，获取email地址列表
+		conn = mysql.connector.connect(user=SQLUser, password=SQLPasswd, database=SQLDataBase)
+		cursor = conn.cursor()
+		cursor.execute('select email from qsbk')
+		data = cursor.fetchall()
+		cursor.close()
+		conn.close()
+		for email in data:
+			self.emails.append(email[0])
+		return self.emails
+		
+
 	def send_content(self):
+		TOADDR = self.get_emailaddr()
 		msg = MIMEText(self.get_content(), 'plain', 'utf-8')
 		msg['From'] = self._format_addr('一个快乐的小2B<%s>' % SENDEREMAIL)
 		msg['To'] = self._format_addr('一群快乐的小2B<%s>' % TOADDR)
@@ -55,10 +74,10 @@ class qsbk:
 		server.quit()
 
 qs = qsbk()
-
+qs.send_content()
+'''
 try:
 	qs.send_content()
 except BaseException:
 	print('error occured')
-	
-
+'''
