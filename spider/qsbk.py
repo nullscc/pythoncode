@@ -18,10 +18,11 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
+import hashlib
 logging.basicConfig(level=logging.INFO)
 #debug，info，warning，error
 
-SENDEREMAIL = 'youemail@qq.com'
+SENDEREMAIL = 'youremail@qq.com'
 SENDPASSWORD = 'yourpasswd'		#QQ或163需要使用客户端密码，对于QQ来说是独立密码
 
 SRVADDR = 'smtp.qq.com'
@@ -29,10 +30,11 @@ SRVPORT = 465	#465 25
 POP3RECVSRCADDR = 'pop.qq.com'
 
 UserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.112 Safari/537.36'
-RootURL = 'http://www.qiushibaike.com/hot/'
+RootURL = 'http://www.qiushibaike.com/textnew/'
+
 
 SQLUser = 'root'
-SQLPasswd = 'passwd'
+SQLPasswd = 'yourpasswd'
 SQLDataBase = 'python'
 
 #糗百的文字段子正则表达式，如果网站改版，需要更新正则表达式
@@ -47,9 +49,12 @@ AutoReplyMsg = {
 'changeto':'	感谢您的信赖，更改邮箱操作成功'
 }
 
+
+
 class qsbk:
 	def __init__(self):
-		self.url = RootURL
+		self.PAGE = 1
+		self.url = RootURL+str(self.PAGE)
 		self.email_content = ''
 		self.emails = ['']
 		self.fromcmd = ''
@@ -60,21 +65,7 @@ class qsbk:
 		#self.nextsendtime = datetime(self.stdtime.year, self.stdtime.month, self.stdtime.day+1, 9, 00)
 		self.nextsendtime = self.stdtime + timedelta(minutes=1)
 		logging.info(self.nextsendtime)
-
-	def get_content(self):
-		req = request.Request(self.url)
-		req.add_header('User-Agent', UserAgent)
-		with request.urlopen(req) as f:
-			content = f.read().decode('utf-8')
-			pattern = re.compile(QBRegex, re.S)
-			items = pattern.findall(content)
-			for i in range(5):	#后续需要考虑下正则表达式没匹配到的情况，会导致IndexError
-				self.email_content += items[i].replace('<br/>', '')
-			return self.email_content
-
-	def _format_addr(self,s):
-		name, addr = parseaddr(s)
-		return formataddr((Header(name, 'utf-8').encode(), addr))
+		self.todayjoke = 0
 
 	def query_sql(self, sqlcmd):	#连接SQL服务器，获取email地址列表
 		conn = mysql.connector.connect(user=SQLUser, password=SQLPasswd, database=SQLDataBase)
@@ -85,10 +76,49 @@ class qsbk:
 		conn.close()
 		return data
 
+	def isnewitem(self, content):
+		md5 = hashlib.md5()
+		md5.update(content.encode('utf-8'))
+		#print(type(md5.hexdigest()))
+		#print("select md5 from md5 where md5 = '%s'" % md5.hexdigest())
+		data = self.query_sql("select md5 from md5 where md5 = '%s'" % md5.hexdigest())
+		if data:
+			return False
+		else:
+			self.excute_sql("insert into md5 values('%s')" % md5.hexdigest())
+			return True
+#insert into md5 values('208e570a3cde28345396f40a79ca311f');
+
+
+	def get_content(self):
+		req = request.Request(self.url)
+		req.add_header('User-Agent', UserAgent)
+		with request.urlopen(req) as f:
+			content = f.read().decode('utf-8')
+			pattern = re.compile(QBRegex, re.S)
+			items = pattern.findall(content)
+
+			for i in range(len(items)):	#后续需要考虑下正则表达式没匹配到的情况，会导致IndexError				
+				if self.isnewitem(items[i]):
+					self.email_content += items[i].replace('<br/>', '')
+					self.todayjoke = self.todayjoke + 1
+				if self.todayjoke == 5:
+					return self.email_content
+			self.PAGE = self.PAGE + 1
+			self.url = RootURL+ str(self.PAGE)
+			return self.get_content()
+						
+
+
+	def _format_addr(self,s):
+		name, addr = parseaddr(s)
+		return formataddr((Header(name, 'utf-8').encode(), addr))
+
+
 	def excute_sql(self, sqlcmd):	#连接SQL服务器，获取email地址列表
 		conn = mysql.connector.connect(user=SQLUser, password=SQLPasswd, database=SQLDataBase)
 		cursor = conn.cursor()
-		logging.info('in excute_sql cmd:%s' %sqlcmd)
+		logging.debug('in excute_sql cmd:%s' %sqlcmd)
 		cursor.execute(sqlcmd)
 
 		conn.commit()
@@ -227,18 +257,20 @@ class qsbk:
 
 qs = qsbk()
 
-if os.fork() == 0:
-	qs.pop3recv_handle()
-else:
-	while True:
-		logging.info('main process')
-		time.sleep(1)
-		if (datetime.now() - qs.nextsendtime) >  timedelta(seconds=1):
-			try:
-				qs.send_content(qs.get_email_from_sql(), qs.get_content())
-			except IMAP4.error:
-				pass
-			finally:
-				qs.nextsendtime = datetime.now() + timedelta(minutes=1)
-				#qs.nextsendtime += timedelta(days=5)
+
+if 1:
+	if os.fork() == 0:
+		qs.pop3recv_handle()
+	else:
+		while True:
+			logging.info('main process')
+			time.sleep(1)
+			if (datetime.now() - qs.nextsendtime) >  timedelta(seconds=1):
+				try:
+					qs.send_content(qs.get_email_from_sql(), qs.get_content())
+				except IMAP4.error:
+					pass
+				finally:
+					qs.nextsendtime = datetime.now() + timedelta(minutes=1)
+					#qs.nextsendtime += timedelta(days=5)
 
