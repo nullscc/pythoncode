@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import re
+import urllib 
 from urllib import request
 from email.mime.text import MIMEText
 import smtplib
@@ -25,13 +26,15 @@ logging.basicConfig(level=logging.INFO)
 SENDEREMAIL = 'youremail@qq.com'
 SENDPASSWORD = 'yourpasswd'		#QQ或163需要使用客户端密码，对于QQ来说是独立密码
 
+AdminEMail = ['youradmin@qq.com']
+
 SRVADDR = 'smtp.qq.com'
 SRVPORT = 465	#465 25
 POP3RECVSRCADDR = 'pop.qq.com'
 
 UserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.112 Safari/537.36'
-RootURL = 'http://www.qiushibaike.com/textnew/'
-
+ROOTURL1 = 'http://www.qiushibaike.com/text/page/'
+ROOTURL2 = 'http://www.qiushibaike.com/textnew/page/'
 
 SQLUser = 'root'
 SQLPasswd = 'yourpasswd'
@@ -49,20 +52,24 @@ AutoReplyMsg = {
 'changeto':'	感谢您的信赖，更改邮箱操作成功'
 }
 
+class NoContentError(ValueError):
+    pass
+
 class qsbk:
 	def __init__(self):
 		self.PAGE = 1
-		self.url = RootURL+str(self.PAGE)
+		self.RootURL = ROOTURL1
+		self.url = self.RootURL+str(self.PAGE)
 		self.email_content = ''
 		self.emails = ['']
 		self.fromcmd = ''
 		self.fromcmd_email = ''
 		self.fromaddr = ''
 		self.stdtime = datetime.now()
+		self.UseROOTURL2 = False
 		logging.debug('init datetime:%s' %self.stdtime)
 		#self.nextsendtime = datetime(self.stdtime.year, self.stdtime.month, self.stdtime.day+1, 9, 00)
 		self.nextsendtime = self.stdtime + timedelta(seconds=1)
-		logging.info(self.nextsendtime)
 		self.todayjoke = 0
 
 	def query_sql(self, sqlcmd):	#连接SQL服务器，获取email地址列表
@@ -89,19 +96,33 @@ class qsbk:
 	def get_content(self):
 		req = request.Request(self.url)
 		req.add_header('User-Agent', UserAgent)
-		with request.urlopen(req) as f:
-			content = f.read().decode('utf-8')
-			pattern = re.compile(QBRegex, re.S)
-			items = pattern.findall(content)
-
-			for i in range(len(items)):	#后续需要考虑下正则表达式没匹配到的情况，会导致IndexError				
-				if self.isnewitem(items[i]):
-					self.email_content += items[i].replace('<br/>', '')
-					self.todayjoke = self.todayjoke + 1
-				if self.todayjoke == 5:
-					return self.email_content
-			self.PAGE = self.PAGE + 1
-			self.url = RootURL+ str(self.PAGE)
+		try:
+			with request.urlopen(req) as f:
+				content = f.read().decode('utf-8')
+				pattern = re.compile(QBRegex, re.S)
+				items = pattern.findall(content)
+				for i in range(len(items)):	#后续需要考虑下正则表达式没匹配到的情况，会导致IndexError	
+					if self.isnewitem(items[i]):
+						self.email_content += items[i].replace('<br/>', '')
+						self.todayjoke = self.todayjoke + 1
+					if self.todayjoke == 5:
+						self.todayjoke = 0
+						self.PAGE = 1
+						return self.email_content
+			
+				self.PAGE = self.PAGE + 1
+				if self.PAGE == 36 and self.UseROOTURL2:
+					self.send_content(AdminEMail, '糗事百科段子已爬尽，主进程已退出，请至服务器处理僵尸子进程')
+					raise NoContentError('qiushibaike has no new content')
+				if self.PAGE == 36:
+					self.UseROOTURL2 = True
+					self.RootURL = ROOTURL2
+					self.PAGE = 1
+				self.url = self.RootURL+ str(self.PAGE)
+				logging.info(self.url)
+				return self.get_content()
+		except urllib.error.HTTPError:
+			logging.warning("urllib.error.HTTPError occured")
 			return self.get_content()
 						
 	def _format_addr(self,s):
@@ -215,7 +236,7 @@ class qsbk:
 				logging.debug('from info:%s %s %s'%(self.fromaddr, self.fromcmd, self.fromcmd_email))
 				if self.fromcmd:
 					self.handlecmd()
-				server.dele(index)
+				#server.dele(index)
 			except poplib.error_proto:
 				logging.info("poplib.error_proto occured")
 			finally:
@@ -230,7 +251,7 @@ class qsbk:
 		return self.emails
 
 	def send_content(self, TOADDR, content):
-		#TOADDR = self.get_email_from_sql()
+		self.RootURL = ROOTURL1
 		try:
 			logging.debug(TOADDR)
 			msg = MIMEText(content, 'plain', 'utf-8')
@@ -245,13 +266,22 @@ class qsbk:
 		except smtplib.SMTPDataError:
 			logging.info('smtplib.SMTPDataError occur')
 		finally:
-			self.todayjoke = 0
 			self.email_content = ''
 			server.quit()
 
 qs = qsbk()
 
-if 1:
+qs.send_content(AdminEMail, '糗事百科段子已爬尽，主进程已退出')
+
+if 0:
+	try:
+		while True:
+			qs.get_content()
+			time.sleep(1)
+	except NoContentError as e:
+		logging.error(e)
+	
+if 0:
 	if os.fork() == 0:  #调用fork创建子进程，没去考虑僵尸进程的问题了
 		qs.pop3recv_handle()
 	else:
