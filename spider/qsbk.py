@@ -249,14 +249,14 @@ class qsbk:
 		ReplyEmail = ['']
 		ReplyEmail.append(self.fromaddr)
 		if self.fromcmd == "add":	#暂未考虑无效邮箱问题
-			if self.fromcmd_email not in emails:
-				if self.islegalemail(fromcmd_email):
+			if self.islegalemail(self.fromcmd_email):
+				if self.fromcmd_email not in emails:
 					self.excute_sql("insert into %s values(NULL, '%s')" %(SQLEailListTable, self.fromcmd_email))
 					self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
 				else:
-					self.send_content(ReplyEmail, '	对不起，您所要预定的email地址不合法。'+Signature)
+					self.send_content(ReplyEmail, '	用户早已预定推送内容，无须重复预定。'+Signature)
 			else:
-				self.send_content(ReplyEmail, '	用户早已预定推送内容，无须重复预定。'+Signature)
+				self.send_content(ReplyEmail, '	对不起，您所要预定的email地址不合法。'+Signature)
 		elif self.fromcmd == "TD":
 			if self.fromaddr in emails:
 				self.excute_sql("delete from %s where %s = '%s'" %(SQLEailListTable, SQLEailListColumn, self.fromaddr))
@@ -272,17 +272,22 @@ class qsbk:
 			else:
 				self.send_content(ReplyEmail, '	您早已预定推送内容，无须重复预定。'+Signature)
 		elif self.fromcmd == "changeto":
-			if self.fromaddr in emails:
-				if self.fromcmd_email not in emails:
-					if self.islegalemail(fromcmd_email):
-						self.excute_sql("update %s set %s = '%s' where %s = '%s'" %(SQLEailListColumn, SQLEailListColumn, SQLEailListTable, self.fromcmd_email, self.fromaddr))
-						self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
+			if self.islegalemail(self.fromcmd_email):
+				if self.fromaddr in emails:
+					if self.fromcmd_email not in emails:
+							self.excute_sql("update %s set %s = '%s' where %s = '%s'" \
+							%(SQLEailListColumn, SQLEailListColumn, SQLEailListTable, self.fromcmd_email, self.fromaddr))
+							self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
 					else:
-						self.send_content(ReplyEmail, '	对不起，您所要改变的email地址不合法，推送内容仍将发送到原email地址'+Signature)
+						self.send_content(ReplyEmail, '	您所指定的邮箱早已预定推送内容，请另指定一个邮箱，\
+						推送内容仍将发送到原email地址。'+Signature)
 				else:
-					self.send_content(ReplyEmail, '	您所指定的邮箱已经在地址列表中，请另指定一个邮箱。'+Signature)
+					self.send_content(ReplyEmail, '	您还未预定推送，请先预定。'+Signature)	
+					
 			else:
-				self.send_content(ReplyEmail, '	您还未预定推送，请先预定。'+Signature)
+				self.send_content(ReplyEmail, '	对不起，您所要改变的email地址不合法，推送内容仍将发送到原email地址。'+Signature)
+		elif self.fromcmd == "sourcecode":
+				self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
 		self.fromcmd = ''
 
 	def pop3recv_handle(self):	#使用POP3协议收取邮件
