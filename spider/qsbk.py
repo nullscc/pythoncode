@@ -54,7 +54,7 @@ AutoReplyMsg = {
 }
 
 Signature = '''
----------------------------------------------------------------------------------------------------
+------------------------------
 本邮件由服务器自动发送，请勿回复以下内容外的任何其他内容，如有任何建议，请发送邮件到jarves@foxmail.com
 如需预定，请发送：addme
 如需退订，请发送：TD
@@ -232,7 +232,7 @@ class qsbk:
 			try:
 				server = poplib.POP3(POP3RECVSRCADDR)
 				# 可以打开或关闭调试信息:
-				server.set_debuglevel(1)
+				#server.set_debuglevel(1)
 
 				server.user(SENDEREMAIL)
 				server.pass_(SENDPASSWORD)
@@ -271,7 +271,7 @@ class qsbk:
 			msg['Subject'] = Header('给快乐小2B的问候', 'utf-8').encode()
 
 			smtp_server = SRVADDR
-			server = smtplib.SMTP_SSL(SRVADDR, SRVPORT) #不支持SSL的应该使用SMTP
+			server = smtplib.SMTP(SRVADDR, SRVPORT) #不支持SSL的应该使用SMTP
 			#server.set_debuglevel(1)
 			server.login(SENDEREMAIL, SENDPASSWORD)
 			server.sendmail(SENDEREMAIL, TOADDR, msg.as_string())
