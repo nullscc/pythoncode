@@ -49,8 +49,6 @@ AutoReplyMsg = {
 'changeto':'	感谢您的信赖，更改邮箱操作成功'
 }
 
-
-
 class qsbk:
 	def __init__(self):
 		self.PAGE = 1
@@ -63,7 +61,7 @@ class qsbk:
 		self.stdtime = datetime.now()
 		logging.debug('init datetime:%s' %self.stdtime)
 		#self.nextsendtime = datetime(self.stdtime.year, self.stdtime.month, self.stdtime.day+1, 9, 00)
-		self.nextsendtime = self.stdtime + timedelta(minutes=1)
+		self.nextsendtime = self.stdtime + timedelta(seconds=1)
 		logging.info(self.nextsendtime)
 		self.todayjoke = 0
 
@@ -87,8 +85,6 @@ class qsbk:
 		else:
 			self.excute_sql("insert into md5 values('%s')" % md5.hexdigest())
 			return True
-#insert into md5 values('208e570a3cde28345396f40a79ca311f');
-
 
 	def get_content(self):
 		req = request.Request(self.url)
@@ -108,19 +104,15 @@ class qsbk:
 			self.url = RootURL+ str(self.PAGE)
 			return self.get_content()
 						
-
-
 	def _format_addr(self,s):
 		name, addr = parseaddr(s)
 		return formataddr((Header(name, 'utf-8').encode(), addr))
-
 
 	def excute_sql(self, sqlcmd):	#连接SQL服务器，获取email地址列表
 		conn = mysql.connector.connect(user=SQLUser, password=SQLPasswd, database=SQLDataBase)
 		cursor = conn.cursor()
 		logging.debug('in excute_sql cmd:%s' %sqlcmd)
 		cursor.execute(sqlcmd)
-
 		conn.commit()
 		cursor.close()
 		conn.close()
@@ -223,11 +215,11 @@ class qsbk:
 				logging.debug('from info:%s %s %s'%(self.fromaddr, self.fromcmd, self.fromcmd_email))
 				if self.fromcmd:
 					self.handlecmd()
-				#server.dele(index)
+				server.dele(index)
 			except poplib.error_proto:
 				logging.info("poplib.error_proto occured")
 			finally:
-				time.sleep(10)
+				time.sleep(2)
 			server.quit()	
 		
 
@@ -253,13 +245,14 @@ class qsbk:
 		except smtplib.SMTPDataError:
 			logging.info('smtplib.SMTPDataError occur')
 		finally:
+			self.todayjoke = 0
+			self.email_content = ''
 			server.quit()
 
 qs = qsbk()
 
-
 if 1:
-	if os.fork() == 0:
+	if os.fork() == 0:  #调用fork创建子进程，没去考虑僵尸进程的问题了
 		qs.pop3recv_handle()
 	else:
 		while True:
@@ -268,9 +261,9 @@ if 1:
 			if (datetime.now() - qs.nextsendtime) >  timedelta(seconds=1):
 				try:
 					qs.send_content(qs.get_email_from_sql(), qs.get_content())
-				except IMAP4.error:
-					pass
+				except smtplib.SMTPException:
+					logging.info('smtplib.SMTPException occured')
 				finally:
-					qs.nextsendtime = datetime.now() + timedelta(minutes=1)
-					#qs.nextsendtime += timedelta(days=5)
+					qs.nextsendtime = datetime.now() + timedelta(seconds=5) #minutes
+					#qs.nextsendtime = qs.nextsendtime + timedelta(days=1)
 
