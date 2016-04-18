@@ -59,7 +59,7 @@ Signature = '''
 如需预定，请发送：addme
 如需退订，请发送：TD
 如需为您的朋友预订，请发送：add your_friend@xx.com
-如需更改收取的邮件地址，请发送：changeto your_emailaddress@xx.com
+如需更改收取的邮件地址，请发送：changeto your_emailaddress@xx.com (某些企业邮箱服务器可能会拦截)
 如果您对python有兴趣，并想查看代码，或者在此功能上想指点以下我的，请发送：sourcecode，您会收到源代码网址
 '''
 
@@ -79,8 +79,8 @@ class qsbk:
 		self.stdtime = datetime.now()
 		self.UseROOTURL2 = False
 		logging.debug('init datetime:%s' %self.stdtime)
-		#self.nextsendtime = datetime(self.stdtime.year, self.stdtime.month, self.stdtime.day+1, 9, 00)
-		self.nextsendtime = self.stdtime + timedelta(seconds=1)
+		self.nextsendtime = datetime(self.stdtime.year, self.stdtime.month, self.stdtime.day+1, 9, 00)
+		#self.nextsendtime = self.stdtime + timedelta(seconds=10)
 		self.todayjoke = 0
 
 	def query_sql(self, sqlcmd):	#连接SQL服务器，获取email地址列表
@@ -95,8 +95,6 @@ class qsbk:
 	def isnewitem(self, content):
 		md5 = hashlib.md5()
 		md5.update(content.encode('utf-8'))
-		#print(type(md5.hexdigest()))
-		#print("select md5 from md5 where md5 = '%s'" % md5.hexdigest())
 		data = self.query_sql("select md5 from md5 where md5 = '%s'" % md5.hexdigest())
 		if data:
 			return False
@@ -133,7 +131,7 @@ class qsbk:
 				logging.debug(self.url)
 				return self.get_content()
 		except urllib.error.HTTPError:
-			logging.warning("urllib.error.HTTPError occured")
+			logging.error("urllib.error.HTTPError occured")
 			return self.get_content()
 						
 	def _format_addr(self,s):
@@ -226,6 +224,7 @@ class qsbk:
 		ReplyEmail.append(self.fromaddr)
 		logging.debug(ReplyEmail)
 		self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
+		self.fromcmd = ''
 
 	def pop3recv_handle(self):
 		while True:		
@@ -251,7 +250,7 @@ class qsbk:
 			except poplib.error_proto:
 				logging.error("poplib.error_proto occured")
 			finally:
-				time.sleep(2)
+				time.sleep(10)
 			server.quit()	
 		
 
@@ -270,34 +269,35 @@ class qsbk:
 			msg['To'] = self._format_addr('一群快乐的小2B<%s>' % TOADDR)
 			msg['Subject'] = Header('给快乐小2B的问候', 'utf-8').encode()
 
-			smtp_server = SRVADDR
-			server = smtplib.SMTP(SRVADDR, SRVPORT) #不支持SSL的应该使用SMTP
+			server = smtplib.SMTP_SSL(SRVADDR, SRVPORT) #不支持SSL的应该使用SMTP
 			#server.set_debuglevel(1)
 			server.login(SENDEREMAIL, SENDPASSWORD)
 			server.sendmail(SENDEREMAIL, TOADDR, msg.as_string())
 		except smtplib.SMTPDataError:
-			logging.info('smtplib.SMTPDataError occur')
+			logging.error('smtplib.SMTPDataError occur')
 		finally:
 			self.email_content = ''
 			server.quit()
 
 qs = qsbk()
-	
-if 1:
-	if os.fork() == 0:  #调用fork创建子进程，如果父进程挂掉，子进程(收取邮件进程)还是会继续运行
-		qs.pop3recv_handle()
-	else:
-		try:
-			while True:
-					logging.debug('main process')
-					time.sleep(1)
-					if (datetime.now() - qs.nextsendtime) >  timedelta(seconds=1):
-						try:
-							qs.send_content(qs.get_email_from_sql(), qs.get_content()+Signature)
-						except smtplib.SMTPException:
-							logging.info('smtplib.SMTPException occured')
-						finally:
-							qs.nextsendtime = datetime.now() + timedelta(seconds=5) #minutes
-							#qs.nextsendtime = qs.nextsendtime + timedelta(days=1)
-		except NoContentError as e:
-			logging.error(e)
+
+if os.fork() == 0:  #调用fork创建子进程，如果父进程挂掉，子进程(收取邮件进程)还是会继续运行
+	qs.pop3recv_handle()
+else:
+	try:
+		while True:
+				logging.debug('main process')
+				sleeptime = (qs.nextsendtime - datetime.now()).total_seconds() + 1
+				logging.info(sleeptime)
+				time.sleep(sleeptime)
+				if (datetime.now() - qs.nextsendtime) >  timedelta(seconds=1):
+					try:
+						qs.send_content(qs.get_email_from_sql(), qs.get_content()+Signature)
+					except smtplib.SMTPException:
+						logging.error('smtplib.SMTPException occured')
+					finally:
+						logging.debug('nextsendtime added~~~~~~~~~~~~')
+						#qs.nextsendtime = datetime.now() + timedelta(minutes=1) #minutes
+						qs.nextsendtime = qs.nextsendtime + timedelta(days=1)
+	except NoContentError as e:
+		logging.error(e)
