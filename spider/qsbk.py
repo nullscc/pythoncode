@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 SENDEREMAIL = 'youremail@qq.com'
 SENDPASSWORD = 'yourpasswd'		#QQ或163需要使用客户端密码，对于QQ来说是独立密码
 
-AdminEMail = ['youradmin@qq.com']
+AdminEMail = ['admin@qq.com']
 
 SRVADDR = 'smtp.qq.com'
 SRVPORT = 465	#465 25
@@ -42,15 +42,26 @@ SQLDataBase = 'python'
 
 #糗百的文字段子正则表达式，如果网站改版，需要更新正则表达式
 QBRegex = r'<div class="content">(.*?)<!--.*?-->.*?</div>\s*(?!.*?<div class="thumb">.*?)?<div class="stats">'
-CmdRegexs = [r'.*?(add)\s*U(.*?)U.*?', r'.*?(TD).*?', r'.*?(addme).*?', r'.*?(changeto)\s*U(.*?)U.*?']
+CmdRegexs = [r'.{0,3}?(add)\s*(.*?)\s*?', r'.{0,3}?(TD)\s*?', r'.{0,3}?(addme)\s*?', r'.{0,3}?(changeto)\s*(.*?)\s*?', r'.{0,3}?(sourcecode)\s*?']
 HaveTwoPara = ['add', 'changeto']
 
 AutoReplyMsg = {
 'add':'	感谢您的信赖，后续每日九时许将会精彩有相关内容推送给您！',
 'TD':'	退订成功！叨扰之处，请见谅！',
 'addme':'	感谢您的信赖，后续每日九时许将会精彩有相关内容推送给您！',
-'changeto':'	感谢您的信赖，更改邮箱操作成功'
+'changeto':'	感谢您的信赖，更改邮箱操作成功',
+'sourcecode':	'请至:https://github.com/nullscc/pythoncode/tree/master/spider，qsbk.py中即是主要代码'
 }
+
+Signature = '''
+---------------------------------------------------------------------------------------------------
+本邮件由服务器自动发送，请勿回复以下内容外的任何其他内容，如有任何建议，请发送邮件到jarves@foxmail.com
+如需预定，请发送：addme
+如需退订，请发送：TD
+如需为您的朋友预订，请发送：add your_friend@xx.com
+如需更改收取的邮件地址，请发送：changeto your_emailaddress@xx.com
+如果您对python有兴趣，并想查看代码，或者在此功能上想指点以下我的，请发送：sourcecode，您会收到源代码网址
+'''
 
 class NoContentError(ValueError):
     pass
@@ -119,7 +130,7 @@ class qsbk:
 					self.RootURL = ROOTURL2
 					self.PAGE = 1
 				self.url = self.RootURL+ str(self.PAGE)
-				logging.info(self.url)
+				logging.debug(self.url)
 				return self.get_content()
 		except urllib.error.HTTPError:
 			logging.warning("urllib.error.HTTPError occured")
@@ -196,7 +207,7 @@ class qsbk:
 					break
 
 	def handlecmd(self):
-		logging.info(self.fromcmd)
+		logging.debug(self.fromcmd)
 		emails = self.get_email_from_sql()
 		if self.fromcmd == "add":
 			if self.fromcmd_email not in emails:
@@ -213,8 +224,8 @@ class qsbk:
 		
 		ReplyEmail = ['']
 		ReplyEmail.append(self.fromaddr)
-		logging.info(ReplyEmail)
-		self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd])
+		logging.debug(ReplyEmail)
+		self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
 
 	def pop3recv_handle(self):
 		while True:		
@@ -225,7 +236,7 @@ class qsbk:
 
 				server.user(SENDEREMAIL)
 				server.pass_(SENDPASSWORD)
-				logging.info("normal excute")
+				logging.debug("normal excute")
 				resp, mails, octets = server.list()
 				index = len(mails)
 
@@ -238,7 +249,7 @@ class qsbk:
 					self.handlecmd()
 				#server.dele(index)
 			except poplib.error_proto:
-				logging.info("poplib.error_proto occured")
+				logging.error("poplib.error_proto occured")
 			finally:
 				time.sleep(2)
 			server.quit()	
@@ -257,7 +268,8 @@ class qsbk:
 			msg = MIMEText(content, 'plain', 'utf-8')
 			msg['From'] = self._format_addr('一个快乐的小2B<%s>' % SENDEREMAIL)
 			msg['To'] = self._format_addr('一群快乐的小2B<%s>' % TOADDR)
-			msg['Subject'] = Header('给快乐的小2B的问候', 'utf-8').encode()
+			msg['Subject'] = Header('给快乐小2B的问候', 'utf-8').encode()
+
 			smtp_server = SRVADDR
 			server = smtplib.SMTP_SSL(SRVADDR, SRVPORT) #不支持SSL的应该使用SMTP
 			#server.set_debuglevel(1)
@@ -270,30 +282,22 @@ class qsbk:
 			server.quit()
 
 qs = qsbk()
-
-qs.send_content(AdminEMail, '糗事百科段子已爬尽，主进程已退出')
-
-if 0:
-	try:
-		while True:
-			qs.get_content()
-			time.sleep(1)
-	except NoContentError as e:
-		logging.error(e)
 	
-if 0:
-	if os.fork() == 0:  #调用fork创建子进程，没去考虑僵尸进程的问题了
+if 1:
+	if os.fork() == 0:  #调用fork创建子进程，如果父进程挂掉，子进程(收取邮件进程)还是会继续运行
 		qs.pop3recv_handle()
 	else:
-		while True:
-			logging.info('main process')
-			time.sleep(1)
-			if (datetime.now() - qs.nextsendtime) >  timedelta(seconds=1):
-				try:
-					qs.send_content(qs.get_email_from_sql(), qs.get_content())
-				except smtplib.SMTPException:
-					logging.info('smtplib.SMTPException occured')
-				finally:
-					qs.nextsendtime = datetime.now() + timedelta(seconds=5) #minutes
-					#qs.nextsendtime = qs.nextsendtime + timedelta(days=1)
-
+		try:
+			while True:
+					logging.debug('main process')
+					time.sleep(1)
+					if (datetime.now() - qs.nextsendtime) >  timedelta(seconds=1):
+						try:
+							qs.send_content(qs.get_email_from_sql(), qs.get_content()+Signature)
+						except smtplib.SMTPException:
+							logging.info('smtplib.SMTPException occured')
+						finally:
+							qs.nextsendtime = datetime.now() + timedelta(seconds=5) #minutes
+							#qs.nextsendtime = qs.nextsendtime + timedelta(days=1)
+		except NoContentError as e:
+			logging.error(e)
