@@ -73,7 +73,7 @@ SQLContentMd5Column = 'md5'	#SQL的段子的md5的表中列名
 QBRegex = r'<div class="content">(.*?)<!--.*?-->.*?</div>\s*(?!.*?<div class="thumb">.*?)?<div class="stats">'
 
 #服务代码正则表达式，允许用户空格等的输入错误
-CmdRegexs = [r'.{0,3}?(add)\s*(.*?)\s*?', r'.{0,3}?(TD)\s*?', r'.{0,3}?(addme)\s*?', r'.{0,3}?(changeto)\s*(.*?)\s*?', r'.{0,3}?(sourcecode)\s*?']
+CmdRegexs = [r'.{0,3}?(addme)\s*?', r'.{0,3}?(TD)\s*?', r'.{0,3}?(add)\s*(.*?)\s*?', r'.{0,3}?(changeto)\s*(.*?)\s*?', r'.{0,3}?(sourcecode)\s*?']
 
 #辅助作用，避免没有group(2)的CmdRegexs报错
 HaveTwoPara = ['add', 'changeto']
@@ -108,7 +108,6 @@ class qsbk:
 		self.RootURL = ROOTURL1
 		self.url = self.RootURL+str(self.PAGE)
 		self.email_content = ''
-		self.emails = ['']
 		self.fromcmd = ''
 		self.fromcmd_email = ''
 		self.fromaddr = ''
@@ -167,7 +166,7 @@ class qsbk:
 				logging.debug(self.url)
 				return self.get_content()
 		except urllib.error.HTTPError:
-			logging.error("urllib.error.HTTPError occured")
+			logging.debug("urllib.error.HTTPError occured")
 			return self.get_content()
 						
 	def _format_addr(self,s):	#解析地址
@@ -239,27 +238,51 @@ class qsbk:
 					if self.fromcmd in HaveTwoPara:
 						self.fromcmd_email = m.group(2)
 					break
-
+	def islegalemail(self, email):
+		if re.match(r'([\w\d]+.)*[\w\d]+@[\w\d]+\.(com|org)', email):
+			return True
+		else:
+			return False
 	def handlecmd(self):	#处理CmdRegexs解析服务命令并回复给请求人
 		logging.debug(self.fromcmd)
 		emails = self.get_email_from_sql()
-		if self.fromcmd == "add":
-			if self.fromcmd_email not in emails:
-				self.excute_sql("insert into %s values(NULL, '%s')" %(SQLEailListTable, self.fromcmd_email))
-		elif self.fromcmd == "TD":
-			if self.fromaddr in emails:
-				self.excute_sql("delete from %s where %s = '%s'" %(SQLEailListColumn, SQLEailListTable, self.fromaddr))
-		elif self.fromcmd == "addme":
-			if self.fromaddr not in emails:
-				self.excute_sql("insert into %s values(NULL, '%s')" %(SQLEailListTable, self.fromaddr))
-		elif self.fromcmd == "changeto":
-			if self.fromcmd_email not in emails:
-				self.excute_sql("update %s set %s = '%s' where %s = '%s'" %(SQLEailListColumn, SQLEailListColumn, SQLEailListTable, self.fromcmd_email, self.fromaddr))
-		
 		ReplyEmail = ['']
 		ReplyEmail.append(self.fromaddr)
-		logging.debug(ReplyEmail)
-		self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
+		if self.fromcmd == "add":	#暂未考虑无效邮箱问题
+			if self.fromcmd_email not in emails:
+				if self.islegalemail(fromcmd_email):
+					self.excute_sql("insert into %s values(NULL, '%s')" %(SQLEailListTable, self.fromcmd_email))
+					self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
+				else:
+					self.send_content(ReplyEmail, '	对不起，您所要预定的email地址不合法。'+Signature)
+			else:
+				self.send_content(ReplyEmail, '	用户早已预定推送内容，无须重复预定。'+Signature)
+		elif self.fromcmd == "TD":
+			if self.fromaddr in emails:
+				self.excute_sql("delete from %s where %s = '%s'" %(SQLEailListTable, SQLEailListColumn, self.fromaddr))
+				self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
+			else:
+				self.send_content(ReplyEmail, '	用户还未预定或早已退订,无须退订。'+Signature)
+		elif self.fromcmd == "addme":
+			logging.debug('addme:%s' %self.fromaddr)
+			logging.debug('emails:%s' %emails)
+			if self.fromaddr not in emails:
+				self.excute_sql("insert into %s values(NULL, '%s')" %(SQLEailListTable, self.fromaddr))
+				self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
+			else:
+				self.send_content(ReplyEmail, '	您早已预定推送内容，无须重复预定。'+Signature)
+		elif self.fromcmd == "changeto":
+			if self.fromaddr in emails:
+				if self.fromcmd_email not in emails:
+					if self.islegalemail(fromcmd_email):
+						self.excute_sql("update %s set %s = '%s' where %s = '%s'" %(SQLEailListColumn, SQLEailListColumn, SQLEailListTable, self.fromcmd_email, self.fromaddr))
+						self.send_content(ReplyEmail, AutoReplyMsg[self.fromcmd]+Signature)
+					else:
+						self.send_content(ReplyEmail, '	对不起，您所要改变的email地址不合法，推送内容仍将发送到原email地址'+Signature)
+				else:
+					self.send_content(ReplyEmail, '	您所指定的邮箱已经在地址列表中，请另指定一个邮箱。'+Signature)
+			else:
+				self.send_content(ReplyEmail, '	您还未预定推送，请先预定。'+Signature)
 		self.fromcmd = ''
 
 	def pop3recv_handle(self):	#使用POP3协议收取邮件
@@ -282,7 +305,7 @@ class qsbk:
 				logging.debug('from info:%s %s %s'%(self.fromaddr, self.fromcmd, self.fromcmd_email))
 				if self.fromcmd:
 					self.handlecmd()
-				#server.dele(index)
+					server.dele(index)
 			except poplib.error_proto:
 				logging.error("poplib.error_proto occured")
 			finally:
@@ -291,10 +314,11 @@ class qsbk:
 		
 
 	def get_email_from_sql(self):	#从数据库查询用户邮件列表
+		emails = ['']
 		data = self.query_sql('select %s from %s' %(SQLEailListColumn, SQLEailListTable))
 		for email in data:
-			self.emails.append(email[0])
-		return self.emails
+			emails.append(email[0])
+		return emails
 
 	def send_content(self, TOADDR, content):	#发送邮件，参数为([收件人列表], "要发送的邮件内容")
 		self.RootURL = ROOTURL1
