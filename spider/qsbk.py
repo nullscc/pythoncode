@@ -15,7 +15,7 @@
 注意：
 	运行本脚本后，邮箱收件箱会全部被删除，所以请务必使用一个不使用的空邮箱，推荐QQ邮箱，或者自己搭建一个
 	由于网易邮箱的反垃圾功能，貌似经常会发送或者接收失败
-	由于主进程和子进程几乎是分开的，所以没有处理父进程，如果父进程突然挂掉，子进程会编程僵尸进程
+	由于主进程和子进程几乎是分开的，所以没有处理父进程，如果父进程突然挂掉，子进程会变成僵尸进程
 	代码应该分成三个类的(邮件类，数据库操作类，爬虫类)，懒得再去改了
 	类中的get_info函数每次会运行两次，增加了系统开销有时间再来优化
 	实现可能略臃肿，后面有大把时间的时候再来看吧。
@@ -72,8 +72,10 @@ SQLContentMd5Column = 'md5'	#SQL的段子的md5的表中列名
 #糗百的文字段子正则表达式，如果网站改版，需要更新正则表达式，本来想去掉图片段子的，但是正则表达式匹配有问题，以下只是取每一页的所有段子内容
 QBRegex = r'<div class="content">(.*?)<!--.*?-->.*?</div>\s*(?!.*?<div class="thumb">.*?)?<div class="stats">'
 
-#服务代码正则表达式，允许用户空格等的输入错误
-CmdRegexs = [r'.{0,3}?(addme)\s*?', r'.{0,3}?(TD)\s*?', r'.{0,3}?(add)\s*(.*?)\s*?', r'.{0,3}?(changeto)\s*(.*?)\s*?', r'.{0,3}?(sourcecode)\s*?']
+#服务代码正则表达式，允许用户空格等的输入错误[\w\d]+@[\w\d]+[]
+CmdRegexs = [r'.{0,3}?(addme)\s*?', r'.{0,3}?(TD)\s*?', r'.{0,3}?(add)\s*(.*?@.+?\.+\w*)\s*', r'.{0,3}?(changeto)\s*(.*?@.+?\.+\w*)\s*?', r'.{0,3}?(sourcecode)\s*?']
+
+EmailRegex = r'.*?@.+?\.+\w*'#由于邮件正则表达是太复杂了，所以就直接只判定是否存在@和.了
 
 #辅助作用，避免没有group(2)的CmdRegexs报错
 HaveTwoPara = ['add', 'changeto']
@@ -94,8 +96,8 @@ Signature = '''
 如需预定，请发送：addme
 如需退订，请发送：TD
 如需为您的朋友预订，请发送：add your_friend@xx.com
-如需更改收取的邮件地址，请发送：changeto your_emailaddress@xx.com (某些企业邮箱服务器可能会拦截)
-如果您对python有兴趣，并想查看代码，或者在此功能上想指点以下我的，请发送：sourcecode，您会收到源代码网址
+如需更改收取的邮件地址，请发送：changeto your_emailaddress@xx.com
+如果您对python有兴趣，并想查看代码，或者在此功能上想指点一下的，请发送：sourcecode，您会收到源代码网址
 '''
 
 #当糗事百科无非重复的段子可爬时，raise此错误
@@ -169,7 +171,7 @@ class qsbk:
 			logging.debug("urllib.error.HTTPError occured")
 			return self.get_content()
 						
-	def _format_addr(self,s):	#解析地址
+	def _format_addr(self,s):	#解析地址	
 		name, addr = parseaddr(s)
 		return formataddr((Header(name, 'utf-8').encode(), addr))
 
@@ -239,7 +241,7 @@ class qsbk:
 						self.fromcmd_email = m.group(2)
 					break
 	def islegalemail(self, email):
-		if re.match(r'([\w\d]+.)*[\w\d]+@[\w\d]+\.(com|org)', email):
+		if re.match(EmailRegex, email):
 			return True
 		else:
 			return False
@@ -248,7 +250,7 @@ class qsbk:
 		emails = self.get_email_from_sql()
 		ReplyEmail = ['']
 		ReplyEmail.append(self.fromaddr)
-		if self.fromcmd == "add":	#暂未考虑无效邮箱问题
+		if self.fromcmd == "add":
 			if self.islegalemail(self.fromcmd_email):
 				if self.fromcmd_email not in emails:
 					self.excute_sql("insert into %s values(NULL, '%s')" %(SQLEailListTable, self.fromcmd_email))
@@ -325,14 +327,20 @@ class qsbk:
 			emails.append(email[0])
 		return emails
 
+	def addrlistto_addrstr(self, toaddr):
+		addrs = ''
+		for addr in toaddr:
+			addrs = addrs + addr + ';'
+		return addrs
+
 	def send_content(self, TOADDR, content):	#发送邮件，参数为([收件人列表], "要发送的邮件内容")
 		self.RootURL = ROOTURL1
 		try:
-			logging.debug(TOADDR)
+			logging.error(TOADDR)
 			msg = MIMEText(content, 'plain', 'utf-8')
 			msg['From'] = self._format_addr('一个快乐的小2B<%s>' % SENDEREMAIL)
-			msg['To'] = self._format_addr('一群快乐的小2B<%s>' % TOADDR)
-			msg['Subject'] = Header('给快乐小2B的问候', 'utf-8').encode()
+			msg['To'] = self.addrlistto_addrstr(TOADDR)
+			msg['Subject'] = Header('每日糗百', 'utf-8').encode()
 
 			server = smtplib.SMTP_SSL(SRVADDR, SRVPORT) #不支持SSL的应该使用SMTP
 			#server.set_debuglevel(1)
